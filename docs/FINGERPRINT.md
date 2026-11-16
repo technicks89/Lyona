@@ -1,8 +1,9 @@
 # Fingerprint authentication
 
 Settings > Fingerprint (#483) enrolls fingers and chooses where a finger is
-accepted instead of the password. It is listed only while fprintd reports a
-reader. Nothing changes until the user asks: installing fprintd changes no PAM
+accepted instead of the password. It is listed while fprintd reports a reader,
+and while any use is still on without one (#522): then it shows only the uses,
+so they can be turned off. Nothing changes until the user asks: installing fprintd changes no PAM
 file, and every use starts off.
 
 ## Getting it
@@ -13,7 +14,7 @@ file, and every use starts off.
   `sudo pacman -S fprintd` does the same.
 - The section appears when fprintd finds a reader libfprint supports. With no
   reader, or a reader libfprint does not list, there is no section and nothing
-  else changes.
+  else changes, unless a use is still on (see above).
 
 ## Fingers
 
@@ -60,11 +61,44 @@ environment.
   since, only the two lines are removed, after a copy of the file is kept
   there (`USE.before-disable.TIME`).
 
+While the polkit use is on, `/etc/pam.d/polkit-1` is Lyona's copy, and it
+shadows `/usr/lib/pam.d/polkit-1`: a change polkit's package makes to its own
+PAM file does not take effect, and pacman makes no `.pacnew` for it, because
+the copy is not a packaged file. The use's detail says when polkit's file has
+changed since the copy was made (#524); turning the use off and on again makes
+a new copy from it.
+
 A `pam_fprintd` line Lyona did not add, such as one added by hand, shows as
 "Set up outside Lyona". Turning the use on or off is refused for it. **Remove
 the Line Added Outside Lyona** (asked twice) removes such lines, after keeping
 a copy of the file (`USE.external.TIME`). Afterwards the use can be turned on
 from Settings.
+
+## Security trade-offs
+
+A finger is a convenience, not a stronger factor than the password. What each
+use gives up:
+
+- **sudo.** With the sudo use on, any program running as you can start `sudo`
+  in the background and wait for you to touch the reader for something else;
+  a terminal shows nothing about what a touch approves. fprintd's maintainers
+  advise fingerprint for polkit and the login screen, not for sudo or a text
+  console, and the pattern is the subject of CVE-2024-37408 (disputed by
+  fprintd, Red Hat and Ubuntu). Only touch the reader when you have just typed
+  `sudo` yourself. Lyona leaves the choice to you; it is off until you turn it
+  on.
+- **Administrator prompts.** With the polkit use on, a finger answers every
+  polkit administrator prompt, including Lyona's own: updates, the display
+  helper, and Settings > Fingerprint itself (so a finger can turn the sudo use
+  on).
+- **No lockout.** The line comes before `system-auth` and `system-login`, so
+  `pam_faillock` neither counts nor blocks fingerprint attempts; each prompt
+  allows three tries, and prompts can repeat. The account checks (expiry,
+  `pam_nologin`, `pam_access`) still run.
+- **Match-on-chip readers.** libfprint takes the "match" a match-on-chip
+  sensor (such as the Goodix `27c6:6594` below) reports over USB as given;
+  published research has shown that attack on such sensors with physical
+  access and custom hardware.
 
 ## The keyring
 
@@ -89,18 +123,36 @@ sudo /usr/local/libexec/lyona/lyona-fingerprint-pam disable lightdm
 
 The copies in `/var/lib/lyona/fingerprint` can also be put back by hand.
 
+### After a rollback
+
+`lyona-update rollback` to a release before 2026.11.0-beta.2 removes Settings >
+Fingerprint and `lyona-fingerprint-pam`, but cannot take the lines out of the
+PAM files, so a use that was on stays on. The rollback says which uses are on
+before it asks (#523). Turn them off in Settings before rolling back. If they
+are still there afterwards, the password keeps working, and they can be
+removed by hand as root:
+
+1. In `/etc/pam.d/sudo` and `/etc/pam.d/lightdm`, delete the two lines that
+   begin with `# lyona-fingerprint:` and `-auth      sufficient  pam_fprintd.so`.
+2. Delete `/etc/pam.d/polkit-1` if Lyona created it (its second line is the
+   `# lyona-fingerprint:` marker); polkit then uses `/usr/lib/pam.d/polkit-1`
+   again.
+
+Or update again: the release that added the lines can turn them off.
+
 ## Validation
 
 - `make check-fingerprint-pam`: the PAM tool against a fake root seeded with
   real PAM files. On, off and byte-for-byte restore; mode kept; an edited file
-  loses only Lyona's lines; polkit's `/etc` copy created and removed; external
+  loses only Lyona's lines; polkit's `/etc` copy created and removed, and a
+  change to polkit's own file reported; external
   lines reported, refused, and removed only on request; a missing module;
   symlinks; bad input.
 - `make check-settings-fingerprint`: the Settings helper against stand-ins for
   fprintd (reader, no reader, no fprintd, fingers, enroll, delete), and `set`
   never reaching pkexec without the trusted root helper.
-- `make check-quickshell-fingerprint-settings-xvfb`: the section is listed only
-  with a reader; the pane loads; enrolling shows progress; a use is asked to
+- `make check-quickshell-fingerprint-settings-xvfb`: the section is listed
+  with a reader, or while a use is on without one; the pane loads; enrolling shows progress; a use is asked to
   change; bad requests never reach the helper.
 - `make check-shell-contracts` holds the root helper's copy of the trust checks
   to `scripts/dwm-trust.sh`.

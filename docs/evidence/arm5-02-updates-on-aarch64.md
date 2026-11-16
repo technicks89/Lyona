@@ -75,6 +75,12 @@ installed from the pane: neither journal has its pkexec `pacman -Syu --needed`.
 
 ## Found on the way
 
+- **The Pi's rollback ran during a package upgrade.** The rollback at 19:24:19
+  fell inside Topgrade's `pacman -Syu` (19:23:57 to 19:27:19, which replaced
+  `qt6-base`). It succeeded and the beta.1 session started normally once
+  pacman had finished, but it is a weaker data point than the XPS 13's
+  rollback, which ran on an idle system (added 2026-11-15, #519).
+
 - **A login during `pacman -Syu` starts no Quickshell (Pi).** The maintainer
   logged in at 19:26:44 while pacman was replacing `qt6-base` (upgraded
   19:26:49). `dwm-quickshell-version-check` got no output from

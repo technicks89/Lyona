@@ -392,6 +392,37 @@ downloaded. Package updates (`pacman -Syu`, Settings) are not affected.
 
 ---
 
+## The screen stays black after an idle blank or a monitor power cycle
+
+light-locker can leave its blanking windows up while it reports itself
+inactive, so the screen stays black with nothing locked (#416). Since
+2026.11.0-beta.2, `dwm-blank-watch` (started at login) and the autorandr hook
+restart it in that state. To see what the watcher did:
+
+```sh
+journalctl -t lyona-locker
+```
+
+From another console (Ctrl+Alt+F3) or over SSH with `DISPLAY=:0`, the same
+recovery runs by hand, and never touches a locked or blanking screen:
+
+```sh
+dwm-settings-power recover-locker
+```
+
+## New features do nothing after an update
+
+An update that replaces `dwm` needs one logout: the running dwm is the old one
+until the next login. The terminal says `SESSION RESTART REQUIRED`, and
+Settings says "Log out and back in to finish" (#521). Log out and back in.
+
+## No panel after logging in during a system upgrade
+
+Logging in while `pacman -Syu` (or Topgrade) is replacing Qt can leave the
+session without Quickshell: `~/.xsession-errors` then says `unable to
+determine the Quickshell version`. Let the upgrade finish, then log out and
+back in.
+
 ## An update fails to build with "Permission denied"
 
 `lyona-update` builds `dwm`, the one program that includes your `config.h`, as

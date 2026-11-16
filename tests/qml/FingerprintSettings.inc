@@ -51,18 +51,33 @@
                 if (model.readerState !== "none") return;
                 root.fpCheck(!root.fpListed(), "listed without a reader");
                 settingsModel.close();
-                fpShell.command = ["sh", "-c", 'cp "$1/status-reader" "$1/status"', "sh", root.fpDir];
+                fpShell.command = ["sh", "-c", 'cp "$1/status-noreader-on" "$1/status"', "sh", root.fpDir];
                 fpShell.running = true;
                 root.fpNext();
                 return;
             case 2:
+                // No reader, but sudo still on: listed, so it can be turned off (#522).
+                if (fpShell.running) return;
+                settingsModel.open("displays");
+                root.fpNext();
+                return;
+            case 3:
+                if (model.useState("sudo") !== "on") return;
+                root.fpCheck(model.readerState === "none" && model.anyUseActive && root.fpListed(),
+                    "not listed with sudo on and no reader: " + JSON.stringify(model.uses));
+                settingsModel.close();
+                fpShell.command = ["sh", "-c", 'cp "$1/status-reader" "$1/status"', "sh", root.fpDir];
+                fpShell.running = true;
+                root.fpNext();
+                return;
+            case 4:
                 if (fpShell.running) return;
                 // Opened on a section after Fingerprint's place, so its keyboard
                 // place has to follow when Fingerprint is listed.
                 settingsModel.open("system");
                 root.fpNext();
                 return;
-            case 3:
+            case 5:
                 // A reader: listed, fingers and uses read, the pane selected.
                 if (model.readerState !== "available" || !root.fpListed()) return;
                 root.fpCheck(settingsModel.selectedSectionId === "system"
@@ -77,7 +92,7 @@
                 model.enroll("left-thumb");
                 root.fpNext();
                 return;
-            case 4:
+            case 6:
                 // Enrolling: progress, then the result, then a fresh status.
                 if (model.busy || root.fpLog.indexOf("enroll left-thumb") < 0) return;
                 root.fpCheck(model.enrollPassed === 2, "scans counted: " + model.enrollPassed);
@@ -86,7 +101,7 @@
                 model.setUse("sudo", "on");
                 root.fpNext();
                 return;
-            case 5:
+            case 7:
                 if (model.busy || root.fpLog.indexOf("set sudo on") < 0) return;
                 root.fpCheck(model.messageSeverity === "success", "set message: " + model.message);
                 // Bad requests never reach the helper.
@@ -97,25 +112,26 @@
                 root.fpCheck(!model.busy, "a bad request started something");
                 root.fpNext();
                 return;
-            case 6:
+            case 8:
                 if (waited < 300) return;
                 root.fpCheck(root.fpLog.indexOf("login") < 0 && root.fpLog.indexOf("maybe") < 0
                     && root.fpLog.indexOf("nose") < 0 && root.fpLog.indexOf("enroll right-index-finger") < 0,
                     "a bad request reached the helper: " + JSON.stringify(root.fpLog));
-                // The reader goes away while Fingerprint is shown: the section
-                // leaves the list, and the selection moves to one that is listed.
+                // The reader goes away while Fingerprint is shown, with every use
+                // off: the section leaves the list, and the selection moves to one
+                // that is listed.
                 root.fpCheck(settingsModel.selectedSectionId === "fingerprint", "not on Fingerprint any more");
-                fpShell.command = ["sh", "-c", 'sed "s/^reader\tavailable\t.*/reader\tnone\tNo fingerprint reader was found/" "$1/status-reader" >"$1/status"',
+                fpShell.command = ["sh", "-c", 'sed -E -e "s/^reader\tavailable\t.*/reader\tnone\tNo fingerprint reader was found/" -e "s/^use\t([a-z]+)\t(on|external)\t.*/use\t\\1\toff\tThe password only/" "$1/status-reader" >"$1/status"',
                     "sh", root.fpDir];
                 fpShell.running = true;
                 root.fpNext();
                 return;
-            case 7:
+            case 9:
                 if (fpShell.running) return;
                 model.refresh();
                 root.fpNext();
                 return;
-            case 8:
+            case 10:
                 if (model.readerState !== "none") return;
                 root.fpCheck(!root.fpListed(), "still listed without a reader");
                 root.fpCheck(settingsModel.selectedSectionId === settingsModel.sections[0].id

@@ -455,10 +455,11 @@ Scope {
     }
 
     // A finished update is good news that needs no click; a failed one stays
-    // until it is dismissed, because that is the one worth reading.
+    // until it is dismissed, because that is the one worth reading, and so does
+    // a success with a note: a logout still to do, or packages to install (#521).
     Timer {
         interval: 20000
-        running: root.progressShown && !root.busy && root.actionSucceeded
+        running: root.progressShown && !root.busy && root.actionSucceeded && root.outcomeNote.length === 0
         repeat: false
         onTriggered: root.dismissProgress()
     }

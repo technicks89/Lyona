@@ -384,6 +384,12 @@ backup_live_install() {
 	if [ -f "$state_home/lyona/install.state" ] && [ ! -L "$state_home/lyona/install.state" ]; then
 		cp -p -- "$state_home/lyona/install.state" "$backup_dir/install.state"
 	fi
+	# The panel's widget choices (#520): a newer release may save them in a
+	# format the older one rejects, and the older one's first panel change then
+	# replaces the file. A rollback puts back the file as it was.
+	if [ -f "$config_home/lyona/panel-widgets.conf" ] && [ ! -L "$config_home/lyona/panel-widgets.conf" ]; then
+		cp -p -- "$config_home/lyona/panel-widgets.conf" "$backup_dir/panel-widgets.conf"
+	fi
 
 	system_manifest=$work/system-files
 	: >"$system_manifest"

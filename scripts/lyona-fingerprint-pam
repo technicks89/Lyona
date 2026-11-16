@@ -111,6 +111,18 @@ has_lyona_lines() {
 	' "$1"
 }
 
+# Whether the /etc copy made for polkit, without Lyona's two lines, is still the
+# system's own file (#524): while it is on, a change polkit's package makes to
+# its PAM file is shadowed, and pacman makes no .pacnew for it.
+vendor_followed() {
+	awk -v marker="$marker" -v line="$fprint_line" '
+		$0 == marker { held = 1; next }
+		held && $0 == line { held = 0; next }
+		held { print marker; held = 0 }
+		{ print }
+	' "$1" | cmp -s - "$2"
+}
+
 # The state of a use: on, off, external or unavailable, and why.
 use_state() {
 	local use=$1 target vendor file
@@ -127,7 +139,11 @@ use_state() {
 	elif [[ -n $(external_lines "$file") ]]; then
 		printf 'external\tfprintd was added to %s outside Lyona\n' "${file#"$root"}"
 	elif has_lyona_lines "$file"; then
-		printf 'on\tA finger is accepted, or the password\n'
+		if [[ $file == "$target" && -n $vendor && -f $vendor ]] && ! vendor_followed "$target" "$vendor"; then
+			printf 'on\tA finger is accepted, or the password. polkit has changed its own PAM file since this copy was made: turn this off and on again to follow it\n'
+		else
+			printf 'on\tA finger is accepted, or the password\n'
+		fi
 	else
 		printf 'off\tThe password only\n'
 	fi

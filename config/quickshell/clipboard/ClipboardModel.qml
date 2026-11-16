@@ -38,6 +38,10 @@ Scope {
     // in time stops capture until the user turns it on again.
     property bool backendReady: false
     property bool backendFailed: false
+    // What the Capture switch shows: off while the source has failed, so the
+    // click the status asks for retries instead of turning capture off and
+    // deleting the saved history (#516).
+    readonly property bool capturing: root.captureEnabled && !root.backendFailed
     property string observerBuffer: ""
     property bool busy: false
     property string message: ""
@@ -116,6 +120,11 @@ Scope {
             root.historyGeneration++;
         }
         root.run(["set", "capture", enabled ? "on" : "off"]);
+    }
+
+    // The Capture switch: on (or a retry, after the source failed) or off.
+    function toggleCapture() {
+        root.setCapture(!root.capturing);
     }
 
     function setPersist(enabled) {

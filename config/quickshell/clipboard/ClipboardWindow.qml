@@ -173,12 +173,12 @@ FloatingWindow {
 
                 PanelToggleSwitch {
                     objectName: "clipboardCaptureSwitch"
-                    checked: root.clipboardModel.captureEnabled
+                    checked: root.clipboardModel.capturing
                     busy: root.clipboardModel.busy
                     enabled: root.clipboardModel.settingsKnown && root.clipboardModel.settingsAvailable
                     accessibleName: "Capture clipboard history"
                     accessibleDescription: "Keeps copied text in this list, except from identifiable password managers and marked copies"
-                    onToggled: root.clipboardModel.setCapture(!root.clipboardModel.captureEnabled)
+                    onToggled: root.clipboardModel.toggleCapture()
                 }
 
                 UiText {
@@ -208,7 +208,7 @@ FloatingWindow {
 
             UiText {
                 Layout.fillWidth: true
-                text: "Capture is off until you turn it on. Copies from browsers and terminals are kept; copies from identifiable password managers, and copies an application marks as secret, are not. A password copied by a browser extension, or from a terminal, can still be kept. Saving to disk is a separate choice; turning it off deletes the file."
+                text: "Capture is off until you turn it on. Copies from browsers and terminals are kept; copies from identifiable password managers, and copies an application marks as secret, are not. A password copied by a browser extension, or from a terminal, can still be kept. Saving to disk is a separate choice; turning it off deletes the file, and so does turning capture off."
                 wrapMode: Text.WordWrap
                 color: Theme.menuMutedText
                 font.pixelSize: Theme.smallFontSize

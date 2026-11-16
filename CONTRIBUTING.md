@@ -6,7 +6,7 @@ target. Arch Linux is the sole supported distribution.
 
 ## Before You Start
 
-- Read `AGENTS.md` for repository conventions, `SPEC.md` for product scope,
+- Read `.github/AGENTS.md` for repository conventions, `SPEC.md` for product scope,
   `docs/roadmap/ROADMAP.md` for phase outcomes, and `docs/roadmap/TASKS.md`
   for active work.
 - Search existing issues and pull requests before starting overlapping work.

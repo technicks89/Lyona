@@ -120,17 +120,22 @@
             case 7:
                 if (!model.backendFailed) return;
                 root.clipCheck(model.status.indexOf("Capture stopped") === 0, "status: " + model.status);
+                // The switch shows off, so the click the status asks for retries.
+                root.clipCheck(!model.capturing && model.captureEnabled, "switch while failed");
                 clipReset.running = true;
                 root.clipNext();
                 return;
             case 8:
-                // Turning capture on again retries.
+                // Turning capture on again, as the switch does, retries (#516).
                 if (clipReset.running) return;
-                model.setCapture(true);
+                model.toggleCapture();
                 root.clipNext();
                 return;
             case 9:
                 if (model.backendFailed || !model.backendReady) return;
+                // The retry kept saving on and the list (#516).
+                root.clipCheck(model.capturing && model.persistEnabled && model.entries.length > 0,
+                    "after retry: persist " + model.persistEnabled + ", entries " + model.entries.length);
                 // Off: the list empties and saving goes with it.
                 model.setCapture(false);
                 root.clipNext();

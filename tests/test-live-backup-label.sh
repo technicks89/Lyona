@@ -14,6 +14,9 @@ home=$work/home
 mkdir -p "$home/.config" "$home/.local/share" "$home/.local/state/lyona"
 # The account's install record, which a rollback puts back (#324 VM).
 printf 'LYONA_USER_VERSION=2026.10.0-beta.5\n' >"$home/.local/state/lyona/install.state"
+# The panel's widget choices, which a rollback puts back too (#520).
+mkdir -p "$home/.config/lyona"
+printf 'panel-settings-protocol\t1\t0\nwidget\tweather\tenabled\n' >"$home/.config/lyona/panel-widgets.conf"
 record=$work/lyona-release
 printf '%s\n' 'LYONA_VERSION=2026.10.0-beta.5' 'LYONA_COMMIT=fb7e28c' 'LYONA_SOURCE=iso' \
 	'LYONA_PREFIX=/usr/local' 'LYONA_INSTALL_DATE=2026-10-08T00:00:00Z' >"$record"
@@ -30,6 +33,7 @@ LYONA_INSTALL_REPO_DIR=$repo lyona_lib=$repo/scripts USER_HOME=$home HOME=$home 
 		backup_live_install
 		cat "$backup_dir/checkout.txt"
 		cp "$backup_dir/install.state" "$LYONA_TEST_WORK/kept-install.state" 2>/dev/null || :
+		cp "$backup_dir/panel-widgets.conf" "$LYONA_TEST_WORK/kept-panel-widgets.conf" 2>/dev/null || :
 	' >"$work/checkout.txt" 2>"$work/err" || {
 	cat "$work/err" >&2
 	fail 'backup_live_install failed'
@@ -51,5 +55,7 @@ fi
 
 cmp -s "$home/.local/state/lyona/install.state" "$work/kept-install.state" ||
 	fail 'the backup does not keep the account install record (install.state)'
+cmp -s "$home/.config/lyona/panel-widgets.conf" "$work/kept-panel-widgets.conf" ||
+	fail 'the backup does not keep the panel widget choices (panel-widgets.conf)'
 
 printf 'Live backups name the version they hold: PASS\n'

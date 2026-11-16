@@ -123,7 +123,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: root.available
         text: root.editable
-            ? "Monitor " + root.monitorIndex + ", tag " + root.tagNumber + ". Saved for this tag only."
+            ? "Monitor " + root.monitorIndex + ", tag " + root.tagNumber + ". The layout applies now and is not saved; the master area and gap are saved for this tag only."
             : "Showing several tags: choose one tag to change its layout settings."
         color: Theme.textMuted
         wrapMode: Text.WordWrap

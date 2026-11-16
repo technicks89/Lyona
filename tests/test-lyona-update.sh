@@ -1040,7 +1040,7 @@ assert_equals "$(printf 'start-quickshell\nrestart-quickshell')" "$(cat "$work/o
 rm -f "$work/old-cc/log"
 assert_string_contains "$(rollback_start 1 2>/dev/null)" 'note=Quickshell did not start again' 'a shell that starts neither way is reported'
 # shellcheck disable=SC2016 # the helper's own source text
-grep -Fq 'succeeded "$rollback_note"' "$work/rollback.sh" ||
+grep -Fq '${rollback_note:+ $rollback_note}"' "$work/rollback.sh" ||
 	fail 'the rollback status does not carry the note that Quickshell did not start'
 
 # valid_user_archive: readable, and everything under the one expected folder.
@@ -1132,6 +1132,34 @@ assert_equals 1 "$(body_of cmd_rollback | grep -c 'run_privileged ')" "run_privi
 # shellcheck disable=SC2016 # the literal source text
 assert_equals 1 "$(body_of cmd_rollback | grep -c '"$backup_dir/install.state" "$state_home/lyona/.install.state.restore"')" \
 	"install.state restore in cmd_rollback"
+# #521: a success that needs a logout says so in the status note, for the pane.
+# shellcheck disable=SC2016 # the literal source text
+assert_equals 1 "$(body_of cmd_apply | grep -c '"$(session_restart_note)${desktop_packages_note:+ $desktop_packages_note}"')" \
+	"apply passes the session restart note"
+# shellcheck disable=SC2016 # the literal source text
+assert_equals 1 "$(body_of cmd_rollback | grep -c '"$(session_restart_note)${rollback_note:+ $rollback_note}"')" \
+	"rollback passes the session restart note"
+[ -z "$(dwm_restart_required=0 bash -c ". <(sed -n '/^session_restart_note()/,/^}/p' \"\$1\"); session_restart_note" bash "$repo/scripts/lyona-update")" ] ||
+	fail 'session_restart_note spoke without a dwm restart'
+case $(dwm_restart_required=1 bash -c ". <(sed -n '/^session_restart_note()/,/^}/p' \"\$1\"); session_restart_note" bash "$repo/scripts/lyona-update") in
+'Log out and back in to finish:'*) ;;
+*) fail 'session_restart_note said nothing with a dwm restart required' ;;
+esac
+# #523: a rollback names the fingerprint uses still on, from their marker lines.
+mkdir -p "$work/pam"
+printf 'auth include system-auth\n' >"$work/pam/lightdm"
+printf '#%%PAM-1.0\n# lyona-fingerprint: added by Lyona Settings > Fingerprint; turn it off there\n-auth sufficient pam_fprintd.so\n' >"$work/pam/sudo"
+cp "$work/pam/sudo" "$work/pam/polkit-1"
+fp_note=$(LYONA_TEST_PAM_DIR=$work/pam bash -c ". <(sed -n '/^fingerprint_rollback_note()/,/^}/p' \"\$1\"); fingerprint_rollback_note" bash "$repo/scripts/lyona-update")
+assert_string_contains "$fp_note" 'Fingerprint is on for: polkit sudo.' 'fingerprint rollback note'
+rm "$work/pam/sudo" "$work/pam/polkit-1"
+[ -z "$(LYONA_TEST_PAM_DIR=$work/pam bash -c ". <(sed -n '/^fingerprint_rollback_note()/,/^}/p' \"\$1\"); fingerprint_rollback_note" bash "$repo/scripts/lyona-update")" ] ||
+	fail 'the fingerprint rollback note spoke with no use on'
+# #520: the panel's widget choices go back too, or the older release's first
+# panel change replaces a file it cannot read.
+# shellcheck disable=SC2016 # the literal source text
+assert_equals 1 "$(body_of cmd_rollback | grep -c '"$backup_dir/panel-widgets.conf" "$config_home/lyona/.panel-widgets.conf.restore"')" \
+	"panel-widgets.conf restore in cmd_rollback"
 # Sync Sprint 12 S12-01: root keeps its own system backups. A rollback names one
 # by id and never passes root a path into the user's backup directory, and the
 # install passes the id so root backs up the live files before installing.
