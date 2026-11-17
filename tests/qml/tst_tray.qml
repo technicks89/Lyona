@@ -66,4 +66,20 @@ TestCase {
         compare([0, 1, 2, 3, 4, 5].map(function(i) { return Tray.redundantSeparator(entries, i); }),
             [true, false, false, true, false, true]);
     }
+
+    // The arrow keys in a tray menu (#534): separators and disabled entries
+    // are skipped, the ends wrap, and -1 starts from the top or the bottom.
+    function test_next_entry_index() {
+        const s = { "isSeparator": true, "enabled": true };
+        const e = { "isSeparator": false, "enabled": true };
+        const off = { "isSeparator": false, "enabled": false };
+        const entries = [s, e, off, s, e, off];
+        compare(Tray.nextEntryIndex(entries, -1, 1), 1);
+        compare(Tray.nextEntryIndex(entries, 1, 1), 4);
+        compare(Tray.nextEntryIndex(entries, 4, 1), 1);
+        compare(Tray.nextEntryIndex(entries, -1, -1), 4);
+        compare(Tray.nextEntryIndex(entries, 1, -1), 4);
+        compare(Tray.nextEntryIndex([s, off], -1, 1), -1);
+        compare(Tray.nextEntryIndex([], -1, 1), -1);
+    }
 }

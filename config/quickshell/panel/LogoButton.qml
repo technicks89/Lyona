@@ -10,6 +10,11 @@ PanelPill {
     Layout.preferredWidth: Theme.pillHeight
     Layout.preferredHeight: Theme.pillHeight
     hovered: logoMouse.containsMouse
+    keyboardActivatable: true
+    Accessible.role: Accessible.Button
+    Accessible.name: "Control Center"
+    Accessible.onPressAction: root.activated()
+    onTriggered: root.activated()
 
     Image {
         id: logoImage

@@ -38,9 +38,28 @@ Rectangle {
     Layout.preferredWidth: Theme.trayItemSize
     Layout.preferredHeight: Theme.trayItemSize
     radius: Theme.smallRadius
-    color: trayMouse.containsMouse ? Theme.controlHoverFill : Theme.transparent
-    border.color: trayMouse.containsMouse ? Theme.controlHoverBorder : Theme.transparent
-    border.width: trayMouse.containsMouse ? Theme.pillBorderWidth : 0
+    // On the panel's keyboard path (#534): Enter or Space is a left click,
+    // the Menu key or Shift+F10 a right click.
+    activeFocusOnTab: true
+    Accessible.role: Accessible.Button
+    Accessible.name: root.trayItem.tooltipTitle || root.trayItem.title || root.trayItem.id || "Tray item"
+    Accessible.onPressAction: root.handleClick(Qt.LeftButton)
+    Keys.onPressed: function(event) {
+        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+            root.handleClick(Qt.LeftButton);
+            event.accepted = true;
+        } else if (event.key === Qt.Key_Menu
+                || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
+            root.openContextMenu();
+            event.accepted = true;
+        }
+    }
+    color: activeFocus ? Theme.controlFocusFill
+        : trayMouse.containsMouse ? Theme.controlHoverFill : Theme.transparent
+    border.color: activeFocus ? Theme.controlFocusBorder
+        : trayMouse.containsMouse ? Theme.controlHoverBorder : Theme.transparent
+    border.width: activeFocus ? Math.max(Theme.pillBorderWidth, Theme.controlFocusBorderWidth)
+        : trayMouse.containsMouse ? Theme.pillBorderWidth : 0
 
     IconImage {
         id: trayIcon
@@ -69,7 +88,8 @@ Rectangle {
             const title = root.trayItem.tooltipTitle || root.trayItem.title || root.trayItem.id || "?";
             return title.length > 0 ? title.charAt(0).toUpperCase() : "?";
         }
-        color: trayMouse.containsMouse ? Theme.controlHoverText : Theme.text
+        color: root.activeFocus ? Theme.controlFocusText
+            : trayMouse.containsMouse ? Theme.controlHoverText : Theme.text
         font.family: Theme.fontFamily
         font.pixelSize: Theme.tinyFontSize
         font.bold: true

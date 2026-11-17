@@ -50,3 +50,21 @@ function redundantSeparator(entries, index) {
         return true;
     return false;
 }
+
+// The entry the arrow keys move to (#534): from FROM, STEP (1 or -1) at a
+// time and wrapping, the next one that is neither a separator nor disabled.
+// FROM -1 starts before the first entry (or after the last, going up). -1
+// when there is no such entry.
+function nextEntryIndex(entries, from, step) {
+    const count = entries.length;
+    if (count === 0)
+        return -1;
+    let index = from < 0 ? (step > 0 ? -1 : count) : from;
+    for (let tried = 0; tried < count; tried++) {
+        index = ((index + step) % count + count) % count;
+        const entry = entries[index];
+        if (entry && !entry.isSeparator && entry.enabled)
+            return index;
+    }
+    return -1;
+}

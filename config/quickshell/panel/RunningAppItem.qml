@@ -13,11 +13,25 @@ Rectangle {
     Layout.preferredWidth: Theme.pillHeight
     Layout.preferredHeight: Theme.pillHeight
     radius: Theme.pillRadius
+    // On the panel's keyboard path (#534): Enter or Space focuses the window.
+    activeFocusOnTab: true
+    Accessible.role: Accessible.Button
+    Accessible.name: (root.app.appClass || "Window") + (root.active ? ", focused" : "")
+    Accessible.onPressAction: root.focusRequested(root.app.windowId)
+    Keys.onPressed: function(event) {
+        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+            root.focusRequested(root.app.windowId);
+            event.accepted = true;
+        }
+    }
     color: active ? Theme.controlSelectedFill
+        : activeFocus ? Theme.controlFocusFill
         : appMouse.containsMouse ? Theme.controlHoverFill : Theme.transparent
-    border.color: active ? Theme.controlSelectedBorder
+    border.color: activeFocus ? Theme.controlFocusBorder
+        : active ? Theme.controlSelectedBorder
         : appMouse.containsMouse ? Theme.controlHoverBorder : Theme.transparent
-    border.width: active || appMouse.containsMouse ? Theme.pillBorderWidth : 0
+    border.width: activeFocus ? Math.max(Theme.pillBorderWidth, Theme.controlFocusBorderWidth)
+        : active || appMouse.containsMouse ? Theme.pillBorderWidth : 0
 
     IconImage {
         id: appIcon

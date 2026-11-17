@@ -13,15 +13,31 @@ Rectangle {
     Layout.preferredWidth: Theme.workspaceButtonSize
     Layout.preferredHeight: Theme.workspaceButtonSize
     radius: Theme.smallRadius
+    // On the panel's keyboard path (#534): Enter or Space shows the tag.
+    activeFocusOnTab: true
+    Accessible.role: Accessible.Button
+    Accessible.name: "Tag " + root.label + (root.selected ? ", shown" : "")
+        + (root.occupied ? ", has windows" : "")
+    Accessible.onPressAction: root.clicked()
+    Keys.onPressed: function(event) {
+        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+            root.clicked();
+            event.accepted = true;
+        }
+    }
     color: selected ? Theme.controlSelectedFill
+        : activeFocus ? Theme.controlFocusFill
         : workspaceMouse.containsMouse ? Theme.controlHoverFill : Theme.transparent
-    border.color: selected ? Theme.controlSelectedBorder
+    border.color: activeFocus ? Theme.controlFocusBorder
+        : selected ? Theme.controlSelectedBorder
         : workspaceMouse.containsMouse ? Theme.controlHoverBorder : Theme.transparent
-    border.width: selected || workspaceMouse.containsMouse ? Theme.pillBorderWidth : 0
+    border.width: activeFocus ? Math.max(Theme.pillBorderWidth, Theme.controlFocusBorderWidth)
+        : selected || workspaceMouse.containsMouse ? Theme.pillBorderWidth : 0
 
     // The label's colour in each state, which the theme contrast check holds
     // to 4.5:1 on that state's surface; the occupied marker shares it.
     readonly property color foreground: root.selected ? Theme.controlSelectedText
+        : root.activeFocus ? Theme.controlFocusText
         : workspaceMouse.containsMouse ? Theme.controlHoverText : Theme.textMuted
 
     // A tag with windows (#474, upstream dwm-titus #395): a small square in
