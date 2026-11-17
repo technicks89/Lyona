@@ -587,8 +587,12 @@ rm -f "$work/actions.log"
 env "${env_common[@]}" "$helper" preview hotplug-timeout 1 "$mouse_key" pointer-speed 0.5 >/dev/null
 env "${env_common[@]}" DWM_INPUT_HOTPLUG_SETTLE_SECONDS=0.01 \
 	TEST_UDEV_EVENTS=ACTION=change "$helper" watch-apply
-for _ in {1..30}; do
-	test ! -e "$work/runtime/dwm-settings-input/hotplug-timeout.state" && break
+# The watchdog removes the state file first and the pending replay marker
+# after it, once the replay ran: waited for together, as a slow runner
+# (aarch64) was caught between the two.
+for _ in {1..50}; do
+	test ! -e "$work/runtime/dwm-settings-input/hotplug-timeout.state" &&
+		test ! -e "$work/runtime/dwm-settings-input/hotplug-replay.pending" && break
 	sleep 0.1
 done
 test ! -e "$work/runtime/dwm-settings-input/hotplug-timeout.state"
