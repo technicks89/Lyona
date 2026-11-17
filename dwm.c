@@ -279,7 +279,7 @@ static void unmanage(Client *c, int destroyed);
 static void untrackoverridewindow(Window win);
 static void focusoverridewindow(Window win);
 static int baracceptsfocus(Window win);
-static void focusbar(Window win);
+static int focusbar(Window win);
 static void releasebar(void);
 static Monitor *wintobar(Window win);
 static int focusinside(Window win);
@@ -5075,17 +5075,22 @@ baracceptsfocus(Window win)
 /* The panel asked for the keyboard with _NET_ACTIVE_WINDOW (#534). A bar is
  * a dock, not a client, so nothing else would give it the keyboard. As for a
  * popup (focusoverridewindow()), the selected client takes its clicks again,
- * so a click on it takes the keyboard back. */
-void
+ * so a click on it takes the keyboard back. Refused, returning 0, while a
+ * fullscreen window covers the bar's monitor: the bar is hidden under it, and
+ * the keyboard would go to a panel nobody can see. */
+int
 focusbar(Window win)
 {
-	if (!baracceptsfocus(win))
-		return;
+	Monitor *m = wintobar(win);
+
+	if (!m || monitorhasfullscreen(m) || !baracceptsfocus(win))
+		return 0;
 	barfocus = overridefocus = win;
 	if (!focusinside(win))
 		XSetInputFocus(dpy, win, RevertToPointerRoot, CurrentTime);
 	if (selmon->sel)
 		grabbuttons(selmon->sel, 0);
+	return 1;
 }
 
 /* The panel let the keyboard go (Escape): to the selected client, when the
@@ -5134,9 +5139,7 @@ untrackoverridewindow(Window win)
 		overridefocus = None;
 		/* A popup the panel opened from the keyboard: back to the panel,
 		 * on the pill that opened it (#534). */
-		if (barfocus && barfocus != win && baracceptsfocus(barfocus))
-			focusbar(barfocus);
-		else
+		if (!barfocus || barfocus == win || !focusbar(barfocus))
 			focus(NULL);
 	}
 

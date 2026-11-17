@@ -78,6 +78,9 @@ PanelWindow {
     // says it takes input, and dwm gives it the keyboard when it asks; off,
     // it says it does not, and dwm hands the keyboard back to the window.
     property bool keyboardMode: false
+    // A fullscreen window covers this monitor, and the panel is under it.
+    readonly property bool coveredByFullscreen: root.state.fullscreenMonitorIndexes.indexOf(
+        root.state.screenIndex(root.screen)) !== -1
     // The keyboard is on this panel now (not on a popup it opened).
     readonly property bool hasKeyboard: island.Window.active
     // A popup of this panel is open: the keyboard is on it, and comes back
@@ -99,8 +102,14 @@ PanelWindow {
             root.enterKeyboard();
     }
 
-    // Starts on the first pill each time, as a new visit to the panel.
+    // Starts on the first pill each time, as a new visit to the panel. Not
+    // under a fullscreen window: dwm refuses the keyboard to a hidden panel,
+    // and Qt would still report the panel active.
     function enterKeyboard() {
+        if (root.coveredByFullscreen) {
+            root.leaveKeyboard();
+            return;
+        }
         root.keyboardMode = true;
         logoButton.forceActiveFocus();
         Qt.callLater(root.requestKeyboard);
@@ -132,6 +141,8 @@ PanelWindow {
     // A popup opened from here closed: dwm gives the keyboard back to the
     // panel at once, unless something else took it (a click on a window).
     onPopupOpenChanged: if (!popupOpen && keyboardMode && !hasKeyboard) keyboardReturn.restart()
+    // A window went fullscreen over the panel: dwm gives it the keyboard.
+    onCoveredByFullscreenChanged: if (coveredByFullscreen && keyboardMode) leaveKeyboard()
 
     Timer {
         id: keyboardReturn

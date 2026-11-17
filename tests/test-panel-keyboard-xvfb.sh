@@ -9,8 +9,9 @@ set -eu
 # key events only: Ctrl+Alt+Tab puts the X keyboard focus on the panel, Tab
 # and Shift+Tab move between its items, Escape gives the keyboard back to the
 # window, a popup opened with Enter gives it back to the panel when Escape
-# closes it, a click on the window ends it all, and a popup opened without
-# the keyboard path still gives the keyboard to the window.
+# closes it, a click on the window ends it all, a popup opened without the
+# keyboard path still gives the keyboard to the window, and a panel under a
+# fullscreen window is refused the keyboard.
 for command_name in Xvfb dbus-run-session quickshell xdotool xprop xmessage; do
 	if ! command -v "$command_name" >/dev/null 2>&1; then
 		printf 'SKIP: %s is unavailable\n' "$command_name"
@@ -261,5 +262,18 @@ test_stage='a bar that says it takes no input is not given the keyboard'
 xdotool windowactivate "$panel_window" >/dev/null 2>&1 || :
 sleep 0.3
 focus_is "$client" || fail 'dwm gave the keyboard to a bar that says it takes no input'
+
+test_stage='a fullscreen window keeps the keyboard'
+# The panel is hidden under a fullscreen window: dwm refuses it the keyboard,
+# and the panel leaves its keyboard path instead of waiting with it on.
+xdotool windowstate --add FULLSCREEN "$client"
+wait_for 'the client to go fullscreen' sh -c "xprop -id $client _NET_WM_STATE | grep -q _NET_WM_STATE_FULLSCREEN"
+wait_for 'the panel to see the fullscreen window' state_has '"covered":true'
+key ctrl+alt+Tab
+sleep 0.5
+focus_is "$client" || fail 'dwm gave the keyboard to a panel under a fullscreen window'
+wait_for 'the panel to leave its keyboard path when refused' state_has '"keyboardMode":false'
+wait_for 'the panel to say it takes no input after the refusal' input_hint_is False
+xdotool windowstate --remove FULLSCREEN "$client"
 
 printf 'panel keyboard Xvfb: ok\n'

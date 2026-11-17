@@ -159,12 +159,13 @@ monitor, starting at the Lyona logo; pressed again, it moves it back.
 | `Home` | Back to the logo |
 | `Enter` or `Space` | What a click does: shows the tag, focuses the app, opens the pill's popup |
 | `Up` / `Down` on the volume pill | Volume up / down |
-| `Menu` or `Shift` + `F10` on a tray icon | Its menu, as a right-click |
+| `Menu` or `Shift` + `F10` on a tray icon | Its menu, as a right-click; in it, `Up` / `Down` move, `Enter` or `Right` opens an entry or submenu, `Left` goes back |
 | `Escape` | The keyboard back to the window you were in |
 
 A popup opened this way gives the keyboard back to the panel, on the same
 item, when it closes with `Escape`. A click on a window or the desktop ends it
-all and focuses what you clicked, as it always does.
+all and focuses what you clicked, as it always does. While a fullscreen window
+covers the monitor, the panel is hidden under it and the key does nothing.
 
 ---
 

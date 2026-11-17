@@ -673,7 +673,8 @@ ShellRoot {
                 "keyboardMode": panel.keyboardMode,
                 "hasKeyboard": panel.hasKeyboard,
                 "popupOpen": panel.popupOpen,
-                "item": panel.keyboardItemName
+                "item": panel.keyboardItemName,
+                "covered": panel.coveredByFullscreen
             })));
         }
     }

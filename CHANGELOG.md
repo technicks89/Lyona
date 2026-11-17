@@ -53,7 +53,9 @@ changes (#515). Updates on aarch64 were validated (#490). See
   icons and pills, shown by a focus ring and their tooltip; `Enter` or `Space`
   does what a click does; `Escape` gives the keyboard back to the window. A
   popup opened from there gives the keyboard back to the panel when it closes.
-  dwm gives a bar the keyboard when it asks while it says it takes input. An
+  A tray icon's menu is driven by the arrow keys, `Enter` and `Escape`. dwm
+  gives a bar the keyboard when it asks while it says it takes input and no
+  fullscreen window covers its monitor. An
   existing `hotkeys.toml` gets the key on the next update when `Ctrl+Alt+Tab`
   is free.
 
